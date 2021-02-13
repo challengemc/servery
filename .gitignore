@@ -1,0 +1,8 @@
+/target
+/*.db
+*.db-val
+*.db-shm
+
+# Editors
+.vscode/
+.idea/

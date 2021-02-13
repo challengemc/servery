@@ -1,0 +1,18 @@
+[package]
+name = "servery"
+version = "0.1.0"
+authors = ["F0X <f0xde@protonmail.com>"]
+edition = "2018"
+
+[dependencies]
+anyhow = "1.0.38"
+async-trait = "0.1.42"
+tokio = { version = "1.2.0", features = ["full"] }
+warp = "0.3.0"
+bollard = "0.9.1"
+sqlx = { version = "0.5.1", features = ["runtime-tokio-rustls", "sqlite"] }
+
+[build-dependencies]
+tokio = { version = "1.2.0", features = ["full"] }
+sqlx = { version = "0.5.1", features = ["runtime-tokio-rustls", "sqlite"] }
+dotenv = "0.15.0"
