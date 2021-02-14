@@ -1548,6 +1548,8 @@ dependencies = [
  "async-trait",
  "bollard",
  "dotenv",
+ "serde",
+ "serde_json",
  "sqlx",
  "tokio 1.2.0",
  "warp",
