@@ -1,32 +1,23 @@
 use crate::server::Server;
-use anyhow::Result;
 use std::{
-    borrow::Borrow,
-    ops::Deref,
     path::{Path, PathBuf},
-    slice,
     sync::Arc,
 };
+use thiserror::Error;
 use tokio::{
     fs::{self, File},
-    io::AsyncWriteExt,
-    sync::{RwLock, RwLockReadGuard},
+    io::{self, AsyncWriteExt},
+    sync::RwLock,
 };
 
-#[derive(Clone)]
-pub struct ServerDb(Arc<RwLock<JsonServerDb>>);
+pub type ServerDb = Arc<RwLock<JsonServerDb>>;
+pub type Result<T, E = Error> = core::result::Result<T, E>;
 
-impl ServerDb {
-    pub async fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
-        Ok(Self(RwLock::new(JsonServerDb::load(path).await?).into()))
-    }
-
-    pub async fn all(&self) -> AllServers<'_> {
-        AllServers(self.0.read().await)
-    }
+pub async fn load<P: AsRef<Path>>(path: P) -> Result<ServerDb> {
+    Ok(RwLock::new(JsonServerDb::load(path).await?).into())
 }
 
-struct JsonServerDb {
+pub struct JsonServerDb {
     path: PathBuf,
     servers: Vec<Server>,
 }
@@ -54,6 +45,9 @@ impl JsonServerDb {
     }
 
     pub async fn add(&mut self, server: Server) -> Result<()> {
+        if self.by_id(server.id).is_some() {
+            return Err(Error::DuplicateId(server.id));
+        }
         self.servers.push(server);
         File::create(&self.path)
             .await?
@@ -62,25 +56,12 @@ impl JsonServerDb {
         Ok(())
     }
 }
-
-pub struct AllServers<'a>(RwLockReadGuard<'a, JsonServerDb>);
-
-impl<'a> Deref for AllServers<'a> {
-    type Target = [Server];
-
-    fn deref(&self) -> &Self::Target {
-        self.0.all()
-    }
-}
-
-impl<'a> Borrow<[Server]> for AllServers<'a> {
-    fn borrow(&self) -> &[Server] {
-        &**self
-    }
-}
-
-impl<'a> AsRef<[Server]> for AllServers<'a> {
-    fn as_ref(&self) -> &[Server] {
-        &**self
-    }
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Server with ID {0} already exists")]
+    DuplicateId(u32),
+    #[error(transparent)]
+    IoError(#[from] io::Error),
+    #[error(transparent)]
+    JsonError(#[from] serde_json::Error),
 }
