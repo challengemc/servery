@@ -5,7 +5,13 @@ use crate::{
 use anyhow::Result;
 use log::error;
 use std::convert::Infallible;
-use warp::{body, hyper::StatusCode, path, reply, Filter, Reply};
+use warp::{
+    body,
+    hyper::StatusCode,
+    path,
+    reply::{self, Response},
+    Filter, Reply,
+};
 
 pub async fn run() -> Result<()> {
     let server_db = db::server::load("servers.json").await?;
@@ -35,16 +41,13 @@ async fn get_all(server_db: ServerDb) -> Result<impl Reply, Infallible> {
     Ok(reply::json(&server_db.read().await.all()))
 }
 
-async fn create(server: NewServer, server_db: ServerDb) -> Result<Box<dyn Reply>, Infallible> {
+async fn create(server: NewServer, server_db: ServerDb) -> Result<Response, Infallible> {
     match server_db.write().await.add(server).await {
-        Ok(id) => Ok(Box::new(reply::with_status(
-            reply::json(&id),
-            StatusCode::CREATED,
-        ))),
+        Ok(id) => Ok(reply::with_status(reply::json(&id), StatusCode::CREATED).into_response()),
         Err(e) => {
             // TODO: actual fucking error handling
             error!("error creating server: {}", e);
-            Ok(Box::new(StatusCode::INTERNAL_SERVER_ERROR))
+            Ok(StatusCode::INTERNAL_SERVER_ERROR.into_response())
         }
     }
 }
