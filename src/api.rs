@@ -1,8 +1,9 @@
 use crate::{
-    db::{self, server::Error as ServerDbError, ServerDb},
-    server::Server,
+    db::{self, ServerDb},
+    server::NewServer,
 };
 use anyhow::Result;
+use log::error;
 use std::convert::Infallible;
 use warp::{body, hyper::StatusCode, path, reply, Filter, Reply};
 
@@ -13,15 +14,15 @@ pub async fn run() -> Result<()> {
         .and(warp::get())
         .and(with_server_db(server_db.clone()))
         .and_then(get_all);
-    let add = path::end()
+    let create = path::end()
         .and(warp::post())
         .and(body::content_length_limit(1024 * 16)) // 16 KiB
         .and(body::json())
         .and(with_server_db(server_db))
-        .and_then(add);
+        .and_then(create);
 
-    warp::serve(servers.and(all.or(add)))
-        .run(([0; 4], 3030))
+    warp::serve(servers.and(all.or(create)))
+        .run(([0; 4], 8080))
         .await;
     Ok(())
 }
@@ -34,10 +35,16 @@ async fn get_all(server_db: ServerDb) -> Result<impl Reply, Infallible> {
     Ok(reply::json(&server_db.read().await.all()))
 }
 
-async fn add(server: Server, server_db: ServerDb) -> Result<impl Reply, Infallible> {
+async fn create(server: NewServer, server_db: ServerDb) -> Result<Box<dyn Reply>, Infallible> {
     match server_db.write().await.add(server).await {
-        Ok(_) => Ok(StatusCode::CREATED),
-        Err(ServerDbError::DuplicateId(_)) => Ok(StatusCode::CONFLICT),
-        Err(_) => Ok(StatusCode::INTERNAL_SERVER_ERROR),
+        Ok(id) => Ok(Box::new(reply::with_status(
+            reply::json(&id),
+            StatusCode::CREATED,
+        ))),
+        Err(e) => {
+            // TODO: actual fucking error handling
+            error!("error creating server: {}", e);
+            Ok(Box::new(StatusCode::INTERNAL_SERVER_ERROR))
+        }
     }
 }
