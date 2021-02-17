@@ -9,8 +9,9 @@ use warp::{
     body,
     hyper::StatusCode,
     path,
+    reject::{self, Reject},
     reply::{self, Response},
-    Filter, Reply,
+    Filter, Rejection, Reply,
 };
 
 pub async fn run() -> Result<()> {
@@ -25,7 +26,10 @@ pub async fn run() -> Result<()> {
         .and(body::content_length_limit(1024 * 16)) // 16 KiB
         .and(body::json())
         .and(with_server_db(server_db))
-        .and_then(create);
+        .and_then(|server, db| async {
+            create(server, db).await.map_err(|err| reject::custom(err))
+        })
+        .recover(recover_route);
 
     warp::serve(servers.and(all.or(create)))
         .run(([0; 4], 8080))
@@ -41,13 +45,25 @@ async fn get_all(server_db: ServerDb) -> Result<impl Reply, Infallible> {
     Ok(reply::json(&server_db.read().await.all()))
 }
 
-async fn create(server: NewServer, server_db: ServerDb) -> Result<Response, Infallible> {
-    match server_db.write().await.add(server).await {
-        Ok(id) => Ok(reply::with_status(reply::json(&id), StatusCode::CREATED).into_response()),
-        Err(e) => {
-            // TODO: actual fucking error handling
-            error!("error creating server: {}", e);
-            Ok(StatusCode::INTERNAL_SERVER_ERROR.into_response())
-        }
+async fn create(server: NewServer, server_db: ServerDb) -> Result<Response, InternalError> {
+    let id = server_db.write().await.add(server).await?;
+    Ok(reply::with_status(reply::json(&id), StatusCode::CREATED).into_response())
+}
+#[derive(Debug)]
+struct InternalError(anyhow::Error);
+
+impl Reject for InternalError {}
+
+impl<E: Into<anyhow::Error>> From<E> for InternalError {
+    fn from(err: E) -> Self {
+        Self(err.into())
     }
+}
+
+async fn recover_route(reject: Rejection) -> Result<impl Reply, Rejection> {
+    if let Some(InternalError(err)) = reject.find() {
+        error!("unhandled error: {}", err);
+        return Ok(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+    Err(reject)
 }
