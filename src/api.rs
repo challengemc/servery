@@ -1,10 +1,8 @@
-use crate::{
-    db::{self, ServerDb},
-    server::NewServer,
-};
+use crate::{db::ServerDb, server::NewServer};
 use anyhow::Result;
 use log::error;
 use std::convert::Infallible;
+use tokio_stream::StreamExt;
 use warp::{
     body,
     hyper::StatusCode,
@@ -14,13 +12,13 @@ use warp::{
     Filter, Rejection, Reply,
 };
 
-pub async fn run() -> Result<()> {
-    let server_db = db::server::load("servers.json").await?;
+pub async fn run(app_name: String, server_db: impl ServerDb) -> Result<()> {
     let servers = warp::path("servers");
     let all = path::end()
         .and(warp::get())
         .and(with_server_db(server_db.clone()))
-        .and_then(get_all);
+        .and_then(|db| async { get_all(db).await.map_err(|err| reject::custom(err)) })
+        .recover(recover_route);
     let create = path::end()
         .and(warp::post())
         .and(body::content_length_limit(1024 * 16)) // 16 KiB
@@ -37,17 +35,25 @@ pub async fn run() -> Result<()> {
     Ok(())
 }
 
-fn with_server_db(db: ServerDb) -> impl Filter<Extract = (ServerDb,), Error = Infallible> + Clone {
+fn with_server_db<Db: ServerDb>(
+    db: Db,
+) -> impl Filter<Extract = (Db,), Error = Infallible> + Clone {
     warp::any().map(move || db.clone())
 }
 
-async fn get_all(server_db: ServerDb) -> Result<impl Reply, Infallible> {
-    Ok(reply::json(&server_db.read().await.all()))
+async fn get_all(server_db: impl ServerDb) -> Result<impl Reply, InternalError> {
+    Ok(reply::json(
+        &server_db
+            .all()
+            .await?
+            .collect::<Result<Vec<_>, _>>()
+            .await?,
+    ))
 }
 
-async fn create(server: NewServer, server_db: ServerDb) -> Result<Response, InternalError> {
-    let id = server_db.write().await.add(server).await?;
-    Ok(reply::with_status(reply::json(&id), StatusCode::CREATED).into_response())
+async fn create(server: NewServer, server_db: impl ServerDb) -> Result<Response, InternalError> {
+    todo!()
+    // Ok(reply::with_status(reply::json(&id), StatusCode::CREATED).into_response())
 }
 #[derive(Debug)]
 struct InternalError(anyhow::Error);

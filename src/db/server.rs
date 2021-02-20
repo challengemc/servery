@@ -1,65 +1,38 @@
 use crate::server::{NewServer, Server};
 use anyhow::Result;
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
-use tokio::{
-    fs::{self, File},
-    io::AsyncWriteExt,
-    sync::RwLock,
-};
+use async_trait::async_trait;
+use bson::oid::ObjectId;
+use mongodb::{Collection, Cursor};
+use std::error::Error;
+use tokio_stream::Stream;
 
-pub type ServerDb = Arc<RwLock<JsonServerDb>>;
+#[async_trait]
+pub trait ServerDb: Clone + Send + Sync + 'static {
+    type Error: Error + Send + Sync + 'static;
+    type AllStream: Stream<Item = Result<Server, Self::Error>> + Send;
 
-pub async fn load<P: AsRef<Path>>(path: P) -> Result<ServerDb> {
-    Ok(RwLock::new(JsonServerDb::load(path).await?).into())
+    async fn all(&self) -> Result<Self::AllStream, Self::Error>;
+
+    async fn insert(&self, server: NewServer) -> Result<ObjectId, Self::Error>;
 }
 
-pub struct JsonServerDb {
-    path: PathBuf,
-    servers: Vec<Server>,
-}
+#[async_trait]
+impl ServerDb for Collection<Server> {
+    type Error = mongodb::error::Error;
+    type AllStream = Cursor<Server>;
 
-impl JsonServerDb {
-    pub async fn load(path: impl AsRef<Path>) -> Result<Self> {
-        let path = path.as_ref();
-        if !path.exists() {
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).await?;
-            }
-            File::create(path).await?.write_all(b"[]").await?;
-        }
-        Ok(Self {
-            path: path.to_owned(),
-            servers: serde_json::from_str(&fs::read_to_string(path).await?)?,
-        })
+    async fn all(&self) -> Result<Self::AllStream, Self::Error> {
+        Ok(self.find(None, None).await?)
     }
 
-    pub fn all(&self) -> &[Server] {
-        &self.servers
-    }
-
-    pub fn by_id(&self, id: u32) -> Option<&Server> {
-        self.servers.iter().find(|server| server.id == id)
-    }
-
-    pub async fn add(&mut self, server: NewServer) -> Result<u32> {
-        let id = self.new_id();
-        self.servers.push(Server {
-            id,
+    async fn insert(&self, server: NewServer) -> Result<ObjectId, Self::Error> {
+        let id = ObjectId::new();
+        let server = Server {
+            id: id.clone(),
             name: server.name,
-        });
-        File::create(&self.path)
-            .await?
-            .write_all(&serde_json::to_vec(&self.servers)?)
-            .await?;
+            mods: server.mods,
+        };
+        self.insert_one(server, None).await?;
         Ok(id)
-    }
-
-    fn new_id(&self) -> u32 {
-        (0..)
-            .find(|&id| self.by_id(id).is_none())
-            .expect("No id available") // Should never happen
     }
 }

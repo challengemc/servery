@@ -1,0 +1,2 @@
+app_name = "servery"
+db_uri = "mongodb://localhost:27017"
