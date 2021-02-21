@@ -41,19 +41,15 @@ fn with_server_db<Db: ServerDb>(
     warp::any().map(move || db.clone())
 }
 
-async fn get_all(server_db: impl ServerDb) -> Result<impl Reply, InternalError> {
+async fn get_all(db: impl ServerDb) -> Result<impl Reply, InternalError> {
     Ok(reply::json(
-        &server_db
-            .all()
-            .await?
-            .collect::<Result<Vec<_>, _>>()
-            .await?,
+        &db.all().await?.collect::<Result<Vec<_>, _>>().await?,
     ))
 }
 
-async fn create(server: NewServer, server_db: impl ServerDb) -> Result<Response, InternalError> {
-    todo!()
-    // Ok(reply::with_status(reply::json(&id), StatusCode::CREATED).into_response())
+async fn create(server: NewServer, db: impl ServerDb) -> Result<Response, InternalError> {
+    let id = server.create(&db).await?;
+    Ok(reply::with_status(reply::json(&id), StatusCode::CREATED).into_response())
 }
 #[derive(Debug)]
 struct InternalError(anyhow::Error);
