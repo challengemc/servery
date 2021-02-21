@@ -2,7 +2,7 @@
 /*.db
 *.db-val
 *.db-shm
-/servers.json
+/servery.toml
 
 # Editors
 .vscode/
