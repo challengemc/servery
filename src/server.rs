@@ -7,8 +7,11 @@ use bollard::{
 };
 use bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use tokio::fs;
+use std::{collections::HashMap, env};
+use tokio::{
+    fs::File,
+    io::{AsyncRead, AsyncReadExt},
+};
 use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,7 +23,7 @@ pub struct Server {
     pub mods: Vec<Url>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewServer {
     pub name: String,
     pub version: String,
@@ -31,18 +34,19 @@ impl NewServer {
     pub async fn create(self, app_name: &str, db: &impl ServerDb) -> Result<ObjectId> {
         let id = db.insert(self.clone()).await?;
         let config = {
-            let mut vars = HashMap::new();
-            vars.insert("app", app_name);
-            vars.insert("name", &self.name);
-            let config = replace_vars(&fs::read_to_string("fabric.toml").await?, &vars);
-            let mut config: container::Config<_> =
-                toml::from_str::<ContainerConfig>(&config)?.into();
-            config.host_config = Some(HostConfig {
-                restart_policy: Some(RestartPolicy {
+            let combined = CreateConfig::load(
+                &mut File::open("fabric.toml").await?,
+                app_name,
+                &id.to_hex(),
+            )
+            .await?;
+            let mut config: container::Config<_> = combined.main.into();
+            config.host_config = combined.host.or(Some(Default::default())).map(|mut host| {
+                host.restart_policy = host.restart_policy.or(Some(RestartPolicy {
                     name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
                     ..Default::default()
-                }),
-                ..Default::default()
+                }));
+                host
             });
             config
         };
@@ -54,6 +58,35 @@ impl NewServer {
             )
             .await?;
         Ok(id)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct CreateConfig {
+    main: ContainerConfig,
+    host: Option<HostConfig>,
+}
+
+impl CreateConfig {
+    async fn load<R: AsyncRead + Unpin + ?Sized>(
+        src: &mut R,
+        app_name: &str,
+        id: &str,
+    ) -> Result<Self> {
+        let mut vars = HashMap::<&str, &str>::new();
+        let env_vars: Vec<_> = env::vars().collect();
+        for (key, val) in &env_vars {
+            vars.insert(key, val);
+        }
+        vars.insert("app", app_name);
+        vars.insert("id", id);
+        let read = {
+            let mut buf = String::new();
+            src.read_to_string(&mut buf).await?;
+            buf
+        };
+        Ok(toml::from_str(&replace_vars(&read, &vars))?)
     }
 }
 
@@ -83,6 +116,23 @@ fn replace_vars(string: &str, vars: &HashMap<&str, &str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_load_config() {
+        let app_name = "servery";
+        let id = ObjectId::new().to_hex();
+
+        let data = r#"Main = {} 
+Host = { Binds = ["{app}_{id}_data:/data"] }"#;
+        assert!(CreateConfig::load(&mut data.as_bytes(), app_name, &id)
+            .await
+            .unwrap()
+            .host
+            .unwrap()
+            .binds
+            .unwrap()
+            .contains(&format!("{}_{}_data:/data", app_name, id)));
+    }
 
     #[test]
     fn test_replace_vars() {
