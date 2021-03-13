@@ -1,7 +1,7 @@
-use crate::{db::ServerDb, server::NewServer};
+use crate::{db::ServerDb, server::NewServer, AppState};
 use anyhow::Result;
 use log::error;
-use std::convert::Infallible;
+use std::{convert::Infallible, sync::Arc};
 use tokio_stream::StreamExt;
 use warp::{
     body,
@@ -12,20 +12,26 @@ use warp::{
     Filter, Rejection, Reply,
 };
 
-pub async fn run(app_name: String, server_db: impl ServerDb) -> Result<()> {
+type State = Arc<AppState>;
+
+pub async fn run(state: AppState, server_db: impl ServerDb) -> Result<()> {
+    let state: State = state.into();
     let servers = warp::path("servers");
     let all = path::end()
         .and(warp::get())
-        .and(with_server_db(server_db.clone()))
+        .and(with_clone(server_db.clone()))
         .and_then(|db| async { get_all(db).await.map_err(|err| reject::custom(err)) })
         .recover(recover_route);
     let create = path::end()
         .and(warp::post())
         .and(body::content_length_limit(1024 * 16)) // 16 KiB
         .and(body::json())
-        .and(with_server_db(server_db))
-        .and_then(|server, db| async {
-            create(server, db).await.map_err(|err| reject::custom(err))
+        .and(with_clone(state))
+        .and(with_clone(server_db))
+        .and_then(|server, state, db| async {
+            create(server, state, db)
+                .await
+                .map_err(|err| reject::custom(err))
         })
         .recover(recover_route);
 
@@ -35,10 +41,8 @@ pub async fn run(app_name: String, server_db: impl ServerDb) -> Result<()> {
     Ok(())
 }
 
-fn with_server_db<Db: ServerDb>(
-    db: Db,
-) -> impl Filter<Extract = (Db,), Error = Infallible> + Clone {
-    warp::any().map(move || db.clone())
+fn with_clone<T: Clone + Send>(val: T) -> impl Filter<Extract = (T,), Error = Infallible> + Clone {
+    warp::any().map(move || val.clone())
 }
 
 async fn get_all(db: impl ServerDb) -> Result<impl Reply, InternalError> {
@@ -47,8 +51,12 @@ async fn get_all(db: impl ServerDb) -> Result<impl Reply, InternalError> {
     ))
 }
 
-async fn create(server: NewServer, db: impl ServerDb) -> Result<Response, InternalError> {
-    let id = server.create(&db).await?;
+async fn create(
+    server: NewServer,
+    state: State,
+    db: impl ServerDb,
+) -> Result<Response, InternalError> {
+    let id = server.create(&state.name, &db).await?;
     Ok(reply::with_status(reply::json(&id), StatusCode::CREATED).into_response())
 }
 #[derive(Debug)]
@@ -65,7 +73,8 @@ impl<E: Into<anyhow::Error>> From<E> for InternalError {
 async fn recover_route(reject: Rejection) -> Result<impl Reply, Rejection> {
     if let Some(InternalError(err)) = reject.find() {
         error!("unhandled error: {}", err);
-        return Ok(StatusCode::INTERNAL_SERVER_ERROR);
+        Ok(StatusCode::INTERNAL_SERVER_ERROR)
+    } else {
+        Err(reject)
     }
-    Err(reject)
 }

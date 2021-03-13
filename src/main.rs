@@ -1,8 +1,11 @@
+#![deny(nonstandard_style, rust_2018_idioms)]
+
 mod api;
 mod db;
 mod server;
 
 use anyhow::Result;
+use flexi_logger::{LogTarget, Logger};
 use log::info;
 use serde::Deserialize;
 use std::path::Path;
@@ -13,29 +16,61 @@ use tokio::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    pretty_env_logger::init();
+    let logger = Logger::with_env_or_str("info")
+        .check_parser_error()?
+        .log_target(LogTarget::StdErr)
+        .use_buffering(true)
+        .start()?;
 
-    let config_path = Path::new("servery.toml");
-    if !config_path.exists() {
-        info!("Writing default config to {:?}", config_path);
-        if let Some(parent) = config_path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-        File::create(config_path)
-            .await?
-            .write_all(include_bytes!("../default_config.toml"))
-            .await?;
-    }
-    let config: Config = toml::from_str(&fs::read_to_string(config_path).await?)?;
+    let config: Config =
+        toml::from_str(&fs::read_to_string(include_config!("servery.toml")).await?)?;
+    include_config!("fabric.toml");
 
     let db = mongodb::Client::with_uri_str(&config.db_uri)
         .await?
         .database(&config.app_name);
-    api::run(config.app_name, db.collection_with_type("server")).await
+    api::run(
+        AppState {
+            name: config.app_name,
+        },
+        db.collection_with_type("server"),
+    )
+    .await?;
+
+    logger.shutdown();
+    Ok(())
 }
 
 #[derive(Deserialize)]
 struct Config {
     app_name: String,
     db_uri: String,
+}
+
+pub struct AppState {
+    pub name: String,
+}
+
+/// Writes a default file included from `$CARGO_MANIFEST_DIR/assets/$file` to the
+/// current working directory if it does not exist.
+#[macro_export]
+macro_rules! include_config {
+    ($file:expr $(,)?) => {{
+        let path = Path::new($file);
+        if !path.exists() {
+            info!("Writing default {:?}", path);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).await?;
+            }
+            File::create(path)
+                .await?
+                .write_all(include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/assets/",
+                    $file
+                )))
+                .await?;
+        }
+        path
+    }};
 }

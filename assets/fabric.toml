@@ -1,0 +1,11 @@
+Image = "itzg/minecraft-server:adopt11"
+Volumes = ["{app}_{name}_data:/data"]
+
+[Env]
+EULA = "TRUE"
+TYPE = "FABRIC"
+ONLINE_MODE = "FALSE"
+USE_AIKAR_FLAGS = "TRUE"
+OVERRIDE_SERVER_PROPERTIES = "TRUE"
+REPLACE_ENV_VARIABLES = "TRUE"
+CFG_PROXY_SECRET_FILE = "/run/secrets/proxy"
