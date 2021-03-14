@@ -5,7 +5,6 @@ mod db;
 mod server;
 
 use anyhow::Result;
-use flexi_logger::{LogTarget, Logger};
 use log::info;
 use serde::Deserialize;
 use std::path::Path;
@@ -16,11 +15,7 @@ use tokio::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let logger = Logger::with_env_or_str("info")
-        .check_parser_error()?
-        .log_target(LogTarget::StdErr)
-        .use_buffering(true)
-        .start()?;
+    pretty_env_logger::init_timed();
 
     let config: Config =
         toml::from_str(&fs::read_to_string(include_config!("servery.toml")).await?)?;
@@ -35,10 +30,7 @@ async fn main() -> Result<()> {
         },
         db.collection_with_type("server"),
     )
-    .await?;
-
-    logger.shutdown();
-    Ok(())
+    .await
 }
 
 #[derive(Deserialize)]
