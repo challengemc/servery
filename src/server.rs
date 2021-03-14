@@ -148,8 +148,8 @@ Host = { Binds = ["{app}_{id}_data:/data"] }"#;
             replace_vars("Hi {name}, this is {ME}. I am {age}y/o", &vars)
         );
         assert_eq!(
-            "Hi {Name}, this is Peter. {31{{}}{",
-            replace_vars("Hi {Name}, this is {ME}. {{age}{{}}{", &vars)
+            "Hi {Name}, this is Peter31. {31{{}}{",
+            replace_vars("Hi {Name}, this is {ME}{age}. {{age}{{}}{", &vars)
         );
     }
 }
