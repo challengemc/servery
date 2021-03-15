@@ -119,7 +119,7 @@ mod tests {
         let name = format!("{}_{}", "servery", ObjectId::new().to_hex());
 
         let data = r#"Main = {} 
-Host = { Binds = ["{app}_{id}_data:/data"] }"#;
+Host = { Binds = ["{name}_data:/data"] }"#;
         assert!(CreateConfig::load(&mut data.as_bytes(), &name)
             .await
             .unwrap()
