@@ -3,6 +3,10 @@ name = "servery"
 version = "0.1.0"
 authors = ["F0X <f0xde@protonmail.com>"]
 edition = "2018"
+description = "Dynamic Minecraft server manager using docker containers"
+readme = "README.md"
+repository = "https://github.com/challengemc/servery"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 log = "0.4"
