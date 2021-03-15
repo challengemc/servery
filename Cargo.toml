@@ -26,3 +26,4 @@ bson = "1.2.0"
 url = { version = "2.2", features = ["serde"] }
 warp = "0.3.0"
 bollard = "0.10.1"
+shiplift = "0.7.0"

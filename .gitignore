@@ -1,8 +1,8 @@
 /target
+/.env
 /*.db
 *.db-val
 *.db-shm
-
 /servery.toml
 /fabric.toml
 
