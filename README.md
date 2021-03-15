@@ -1,7 +1,7 @@
 # Servery
 
-Dynamic Minecraft server manager using docker containers, controlled using
-the HTTP REST API.
+Dynamic Minecraft server manager using Docker containers, controlled by the
+HTTP REST API.
 
 ## License
 
