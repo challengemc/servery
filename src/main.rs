@@ -15,6 +15,7 @@ use tokio::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    dotenv::dotenv()?;
     pretty_env_logger::init_timed();
 
     let config: Config =

@@ -1,7 +1,7 @@
 use crate::db::ServerDb;
 use anyhow::Result;
 use bollard::{
-    container::{self, CreateContainerOptions},
+    container::{self, CreateContainerOptions, StartContainerOptions},
     models::{ContainerConfig, HostConfig, RestartPolicy, RestartPolicyNameEnum},
     Docker,
 };
@@ -32,14 +32,11 @@ pub struct NewServer {
 
 impl NewServer {
     pub async fn create(self, app_name: &str, db: &impl ServerDb) -> Result<ObjectId> {
-        let id = db.insert(self.clone()).await?;
+        let id = db.insert(self).await?;
+        let container_name = format!("{}_{}", app_name, id.to_hex());
         let config = {
-            let combined = CreateConfig::load(
-                &mut File::open("fabric.toml").await?,
-                app_name,
-                &id.to_hex(),
-            )
-            .await?;
+            let combined =
+                CreateConfig::load(&mut File::open("fabric.toml").await?, &container_name).await?;
             let mut config: container::Config<_> = combined.main.into();
             config.host_config = combined.host.or(Some(Default::default())).map(|mut host| {
                 host.restart_policy = host.restart_policy.or(Some(RestartPolicy {
@@ -51,11 +48,16 @@ impl NewServer {
             config
         };
         let docker = Docker::connect_with_local_defaults()?;
-        docker
+        let created = docker
             .create_container(
-                Some(CreateContainerOptions { name: self.name }),
+                Some(CreateContainerOptions {
+                    name: container_name,
+                }),
                 config.into(),
             )
+            .await?;
+        docker
+            .start_container(&created.id, None::<StartContainerOptions<String>>)
             .await?;
         Ok(id)
     }
@@ -69,18 +71,13 @@ struct CreateConfig {
 }
 
 impl CreateConfig {
-    async fn load<R: AsyncRead + Unpin + ?Sized>(
-        src: &mut R,
-        app_name: &str,
-        id: &str,
-    ) -> Result<Self> {
+    async fn load<R: AsyncRead + Unpin + ?Sized>(src: &mut R, name: &str) -> Result<Self> {
         let mut vars = HashMap::<&str, &str>::new();
         let env_vars: Vec<_> = env::vars().collect();
         for (key, val) in &env_vars {
             vars.insert(key, val);
         }
-        vars.insert("app", app_name);
-        vars.insert("id", id);
+        vars.insert("name", name);
         let read = {
             let mut buf = String::new();
             src.read_to_string(&mut buf).await?;
@@ -119,19 +116,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_config() {
-        let app_name = "servery";
-        let id = ObjectId::new().to_hex();
+        let name = format!("{}_{}", "servery", ObjectId::new().to_hex());
 
         let data = r#"Main = {} 
 Host = { Binds = ["{app}_{id}_data:/data"] }"#;
-        assert!(CreateConfig::load(&mut data.as_bytes(), app_name, &id)
+        assert!(CreateConfig::load(&mut data.as_bytes(), &name)
             .await
             .unwrap()
             .host
             .unwrap()
             .binds
             .unwrap()
-            .contains(&format!("{}_{}_data:/data", app_name, id)));
+            .contains(&format!("{}_data:/data", name)));
     }
 
     #[test]

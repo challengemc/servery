@@ -1,14 +1,14 @@
 [Main]
 Image = "itzg/minecraft-server:adopt11"
-
-[Main.Env]
-EULA = "TRUE"
-TYPE = "FABRIC"
-ONLINE_MODE = "FALSE"
-USE_AIKAR_FLAGS = "TRUE"
-OVERRIDE_SERVER_PROPERTIES = "TRUE"
-REPLACE_ENV_VARIABLES = "TRUE"
-CFG_PROXY_SECRET_FILE = "/run/secrets/proxy"
+Env = [
+    "EULA=TRUE",
+    "TYPE=FABRIC",
+    "ONLINE_MODE=FALSE",
+    "USE_AIKAR_FLAGS=TRUE",
+    "OVERRIDE_SERVER_PROPERTIES=TRUE",
+    "REPLACE_ENV_VARIABLES=TRUE",
+    "CFG_PROXY_SECRET_FILE=/run/secrets/proxy",
+]
 
 [Host]
-Binds = ["{app}_{id}_data:/data"]
+Binds = ["{name}_data:/data"]
