@@ -38,13 +38,19 @@ impl NewServer {
             let combined =
                 CreateConfig::load(&mut File::open("fabric.toml").await?, &container_name).await?;
             let mut config: container::Config<_> = combined.main.into();
-            config.host_config = combined.host.or(Some(Default::default())).map(|mut host| {
-                host.restart_policy = host.restart_policy.or(Some(RestartPolicy {
-                    name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
-                    ..Default::default()
-                }));
-                host
-            });
+            config.host_config =
+                combined
+                    .host
+                    .or_else(|| Some(Default::default()))
+                    .map(|mut host| {
+                        host.restart_policy = host.restart_policy.or_else(|| {
+                            Some(RestartPolicy {
+                                name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
+                                ..Default::default()
+                            })
+                        });
+                        host
+                    });
             config
         };
         let docker = Docker::connect_with_local_defaults()?;
@@ -53,7 +59,7 @@ impl NewServer {
                 Some(CreateContainerOptions {
                     name: container_name,
                 }),
-                config.into(),
+                config,
             )
             .await?;
         docker

@@ -20,7 +20,7 @@ pub async fn run(state: AppState, server_db: impl ServerDb) -> Result<()> {
     let all = path::end()
         .and(warp::get())
         .and(with_clone(server_db.clone()))
-        .and_then(|db| async { get_all(db).await.map_err(|err| reject::custom(err)) })
+        .and_then(|db| async { get_all(db).await.map_err(reject::custom) })
         .recover(recover_route);
     let create = path::end()
         .and(warp::post())
@@ -29,9 +29,7 @@ pub async fn run(state: AppState, server_db: impl ServerDb) -> Result<()> {
         .and(with_clone(state))
         .and(with_clone(server_db))
         .and_then(|server, state, db| async {
-            create(server, state, db)
-                .await
-                .map_err(|err| reject::custom(err))
+            create(server, state, db).await.map_err(reject::custom)
         })
         .recover(recover_route);
 
